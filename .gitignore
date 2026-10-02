@@ -1,0 +1,7 @@
+node_modules/
+dist/
+# Real financial data never leaves this machine
+data/
+*.sqlite
+*.sqlite-*
+.DS_Store
