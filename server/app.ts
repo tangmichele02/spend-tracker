@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import type { Backups } from './backup.ts'
+import { BadRequest, check } from './errors.ts'
+import { registerReconcile } from './reconcile.ts'
 import { NO_CATEGORY_COLOR, TAG_COLORS, type DB } from './db.ts'
 import type {
   Account, Bootstrap, Category, Goal, MerchantGroup, MerchantRule, MonthSummary, NetWorth,
@@ -10,10 +12,6 @@ import type {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
-class BadRequest extends Error {}
-function check(cond: unknown, message: string): asserts cond {
-  if (!cond) throw new BadRequest(message)
-}
 
 const TX_SELECT = `
 SELECT t.id, t.date, t.month, t.account_id, a.name AS account_name, t.amount_cents, t.kind, t.description,
@@ -568,6 +566,8 @@ export function createApp(db: DB, backups?: Backups) {
     db.prepare('DELETE FROM categories WHERE id = ?').run(+c.req.param('id'))
     return c.json({ ok: true })
   })
+
+  registerReconcile(app, db, { addTx, addTransfer, txById })
 
   // ---- Backups ----
 

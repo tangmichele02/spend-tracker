@@ -144,3 +144,82 @@ export interface MerchantGroup {
   last: string
   items: { id: number; date: string; description: string; cents: number; category_name: string | null }[]
 }
+
+export interface Card {
+  id: number
+  name: string
+  issuer: 'chase' | 'capitalone'
+  last4: string
+}
+
+export interface CardLineRow {
+  id: number
+  card_id: number
+  date: string
+  description: string
+  /** Spending-signed: charge positive, refund negative. */
+  amount_cents: number
+  kind: 'charge' | 'refund' | 'payment'
+}
+
+export interface BankLineRow {
+  id: number
+  account_id: number
+  date: string
+  description: string
+  amount_cents: number
+  type: string
+  balance_cents: number | null
+  card_payment_id: number | null
+  ignored: number
+}
+
+export type Proposal =
+  | {
+      kind: 'card'
+      card: Card
+      payment: CardLineRow
+      /** Unpaid charges and refunds on that card, oldest first; `proposed` marks the set that adds up to the payment. */
+      items: (CardLineRow & { proposed: boolean; existing: Tx | null })[]
+      exact: boolean
+    }
+  | { kind: 'existing'; tx: Tx }
+  | { kind: 'guess'; type: 'purchase' | 'income' | 'reimbursement' | 'transfer' }
+
+export interface ReconcileLine extends BankLineRow {
+  status: 'open' | 'done' | 'ignored'
+  /** Entries this line produced or was matched to. */
+  txs: Tx[]
+  card_name: string | null
+  proposal: Proposal | null
+}
+
+export interface ReconcileView {
+  account_id: number
+  month: string
+  /** App balances at the start and end of the month, and the bank's where its export shows them. */
+  start: { app_cents: number; bank_cents: number | null }
+  /** `typed` when the bank's figure was entered by hand because the export has no balances (US Bank). */
+  end: { app_cents: number; bank_cents: number | null; typed: boolean }
+  lines: ReconcileLine[]
+  /** Entries in this account and month that no bank line accounts for yet. */
+  unmatched: Tx[]
+}
+
+export type ResolveInput =
+  | {
+      bank_line_id: number
+      action: 'card'
+      card_payment_id: number
+      items: { card_line_id: number; category_id: number | null; existing_tx_id: number | null }[]
+      /** Lines typed in to make up what the card export is missing. Spending-signed: a refund is negative. */
+      manual?: { date: string; description: string; amount_cents: number; category_id: number | null }[]
+    }
+  | { bank_line_id: number; action: 'existing'; tx_id: number }
+  | {
+      bank_line_id: number
+      action: 'entry'
+      parts: { kind: 'purchase' | 'income' | 'reimbursement'; amount_cents: number; description: string; category_id: number | null; one_off?: boolean; reimburses_id?: number | null; date?: string }[]
+    }
+  | { bank_line_id: number; action: 'transfer'; other_account_id: number; description: string }
+  | { bank_line_id: number; action: 'ignore' }

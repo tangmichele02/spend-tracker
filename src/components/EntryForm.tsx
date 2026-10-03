@@ -5,11 +5,12 @@ import { api, query } from '../api.ts'
 import { useData } from '../App.tsx'
 import { amountField, dateLabel, money, monthLabel } from '../format.ts'
 import { store, stored } from '../hooks.ts'
+import { QuickGrid } from './QuickGrid.tsx'
 
-const KINDS: [Kind, string][] = [
-  ['purchase', 'Purchase'],
-  ['income', 'Income'],
-  ['reimbursement', 'Reimbursement'],
+type Mode = Kind | 'entries'
+const KINDS: [Mode, string][] = [
+  ['entries', 'Entries'],
+  ['reimbursement', 'Linked reimbursement'],
   ['transfer', 'Transfer'],
 ]
 
@@ -28,7 +29,7 @@ export function EntryForm({ month, defaultDate, onSaved, reimburse, onReimburseH
   const active = accounts.filter((a) => !a.archived)
   const checking = active.filter((a) => a.type === 'checking')
 
-  const [kind, setKind] = useState<Kind>('purchase')
+  const [kind, setKind] = useState<Mode>('entries')
   const [date, setDate] = useState(defaultDate)
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
@@ -49,11 +50,11 @@ export function EntryForm({ month, defaultDate, onSaved, reimburse, onReimburseH
 
   useEffect(() => setDate(defaultDate), [defaultDate])
 
-  function switchKind(next: Kind) {
+  function switchKind(next: Mode) {
     setKind(next)
     setError('')
     setLinked(null)
-    if (next !== 'transfer') {
+    if (next !== 'transfer' && next !== 'entries') {
       const remembered = stored(`account:${next}`)
       setAccountId(checking.some((a) => String(a.id) === remembered) ? remembered! : String(checking[0]?.id ?? ''))
     }
@@ -121,6 +122,30 @@ export function EntryForm({ month, defaultDate, onSaved, reimburse, onReimburseH
     } catch (err) {
       setError((err as Error).message)
     }
+  }
+
+  const tabs = (
+    <div className="tabs" role="tablist">
+      {KINDS.map(([k, label]) => (
+        <button key={k} type="button" role="tab" aria-selected={kind === k} className={kind === k ? 'active' : ''} onClick={() => switchKind(k)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+  const datalist = (
+    <datalist id="known-descriptions">
+      {descriptions.slice(0, 500).map((d) => <option key={d.description} value={d.description} />)}
+    </datalist>
+  )
+  if (kind === 'entries') {
+    return (
+      <div className="card entry">
+        {tabs}
+        <QuickGrid month={month} defaultDate={defaultDate} onSaved={onSaved} />
+        {datalist}
+      </div>
+    )
   }
 
   return (

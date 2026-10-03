@@ -6,6 +6,7 @@ import { Companies } from './pages/Companies.tsx'
 import { Import } from './pages/Import.tsx'
 import { Month } from './pages/Month.tsx'
 import { NetWorthPage } from './pages/NetWorth.tsx'
+import { Reconcile } from './pages/Reconcile.tsx'
 import { Savings } from './pages/Savings.tsx'
 import { Settings } from './pages/Settings.tsx'
 import { Spending } from './pages/Spending.tsx'
@@ -19,6 +20,7 @@ export const useData = () => useContext(DataContext)!
 
 const NAV = [
   ['month', 'Month'],
+  ['reconcile', 'Reconcile'],
   ['transactions', 'Transactions'],
   ['spending', 'Spending'],
   ['savings', 'Savings'],
@@ -68,6 +70,7 @@ export function App() {
       <main className="page">
         {page === 'month' && <Month month={/^\d{4}-(0[1-9]|1[0-2])$/.test(arg ?? '') && arg >= `${MIN_YEAR}-01` ? arg : currentMonth()} />}
         {page === 'transactions' && <Transactions key={arg ?? ''} kind={arg} />}
+        {page === 'reconcile' && <Reconcile month={/^\d{4}-(0[1-9]|1[0-2])$/.test(arg ?? '') ? arg : undefined} />}
         {page === 'spending' && <Spending />}
         {page === 'savings' && <Savings />}
         {page === 'networth' && <NetWorthPage />}

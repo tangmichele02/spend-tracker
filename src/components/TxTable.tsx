@@ -61,11 +61,6 @@ export function TxTable({ rows, onChanged, onReimburse, withYear, perAccount }: 
     onChanged()
   }
 
-  async function toggleCleared(tx: Tx) {
-    await api('PATCH', `/api/transactions/${tx.id}`, { cleared: !tx.cleared })
-    onChanged()
-  }
-
   // Money arriving in a checking account from another of your accounts: a Zelle between checking
   // accounts, or a withdrawal from savings or investments.
   const isChecking = (name: string | null) => accounts.some((a) => a.name === name && a.type === 'checking')
@@ -82,14 +77,12 @@ export function TxTable({ rows, onChanged, onReimburse, withYear, perAccount }: 
       <table className="tx">
         <thead>
           <tr>
-            <th className="tick" title="Tick when this line matches your bank statement">✓</th>
             <th>Date</th><th>Description</th><th>Category</th>{!perAccount && <th>Account</th>}<th className="num">Amount</th><th />
           </tr>
         </thead>
         <tbody>
           {rows.map((tx) => editing === tx.id ? (
             <tr key={tx.id} className="editing" onKeyDown={onKey(tx)}>
-              <td />
               <td>
                 <input type="date" value={draft.date} aria-label="Date" onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
                 <label className="check small">Counts in<input type="month" value={draft.month} onChange={(e) => setDraft({ ...draft, month: e.target.value })} /></label>
@@ -137,7 +130,6 @@ export function TxTable({ rows, onChanged, onReimburse, withYear, perAccount }: 
             </tr>
           ) : (
             <tr key={tx.id}>
-              <td className="tick"><input type="checkbox" checked={!!tx.cleared} onChange={() => void toggleCleared(tx)} aria-label="Matches statement" /></td>
               <td className="nowrap">{dateLabel(tx.date, withYear)}</td>
               <td>
                 {tx.kind === 'transfer'

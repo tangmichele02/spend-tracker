@@ -1,60 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useData } from '../App.tsx'
-import { parseAmount } from '../../shared/parse.ts'
 import type { MonthSummary, Tx } from '../../shared/types.ts'
-import { api, query } from '../api.ts'
+import { query } from '../api.ts'
 import { BarList } from '../charts.tsx'
 import { EntryForm } from '../components/EntryForm.tsx'
 import { TxTable } from '../components/TxTable.tsx'
-import { currentMonth, dateLabel, lastDay, MIN_YEAR, money, monthLabel, percent, shiftMonth, today } from '../format.ts'
+import { currentMonth, MIN_YEAR, money, monthLabel, percent, shiftMonth, today } from '../format.ts'
 import { store, stored, useLoad } from '../hooks.ts'
 
 type AccountRow = MonthSummary['accounts'][number]
-
-function Reconcile({ account, month, onSaved, bare }: { account: AccountRow; month: string; onSaved: () => void; bare?: boolean }) {
-  const defaultDate = month === currentMonth() ? today() : lastDay(month)
-  const [date, setDate] = useState(account.snapshot?.date ?? defaultDate)
-  const [value, setValue] = useState('')
-  const [error, setError] = useState('')
-  useEffect(() => { setDate(account.snapshot?.date ?? defaultDate); setValue('') }, [account.snapshot?.date, defaultDate])
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    const cents = parseAmount(value)
-    if (cents === null) return setError('Enter the balance your bank shows')
-    await api('POST', '/api/snapshots', { rows: [{ account_id: account.id, date, balance_cents: cents }] })
-    setError('')
-    setValue('')
-    onSaved()
-  }
-
-  const snap = account.snapshot
-  const diff = snap ? snap.balance_cents - snap.computed_cents : 0
-  return (
-    <li>
-      {!bare && (
-        <div className="row">
-          <strong>{account.name}</strong>
-          <span className="num">{money(account.balance_cents)}</span>
-        </div>
-      )}
-      {snap && (
-        <div className={`row status ${diff === 0 ? 'good' : 'bad'}`}>
-          <span>{diff === 0 ? '✓ Matches' : '⚠ Off by ' + money(Math.abs(diff))} on {dateLabel(snap.date)}</span>
-          {diff !== 0 && <span className="muted">bank {money(snap.balance_cents)} · here {money(snap.computed_cents)}</span>}
-        </div>
-      )}
-      {account.uncleared > 0 && <div className="muted small">{account.uncleared} line{account.uncleared === 1 ? '' : 's'} not ticked this month</div>}
-      <form className="row reconcile" onSubmit={save}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Balance date" />
-        <input className="num" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)}
-          placeholder="Balance" aria-label="Balance per bank" />
-        <button type="submit">Check</button>
-      </form>
-      {error && <div className="error">{error}</div>}
-    </li>
-  )
-}
 
 const SECTIONS = [
   ['income', 'Income', '+'],
@@ -99,7 +53,6 @@ function AccountColumn({ account, month, version, onChanged, onReimburse }: {
           <tr className="total"><td>End of {monthLabel(month, 'short')}</td><td className="num">{money(account.balance_cents)}</td></tr>
         </tbody>
       </table>
-      <ul className="accounts"><Reconcile account={account} month={month} onSaved={onChanged} bare /></ul>
       {SECTIONS.map(([key, label]) => (
         <div key={key} className="block">
           <div className="row"><h3>{label} <span className="muted">({groups[key].length})</span></h3><span className="num">{signed(net(key))}</span></div>
@@ -119,8 +72,8 @@ export function Month({ month }: { month: string }) {
   const [view, setView] = useState(() => (stored('month-view') === 'combined' ? 'combined' : 'accounts'))
   const refresh = () => { void summary.reload(); void list.reload(); setVersion((v) => v + 1) }
   const pickView = (v: string) => { setView(v); store('month-view', v) }
-  // Contributions taken from a paycheck never sit in a checking account, so they get their own block.
-  const payroll = (list.data?.rows ?? []).filter((tx) => tx.kind === 'transfer' && !tx.other_account_name)
+  // Contributions taken from a paycheck never touch checking; they are listed on the Savings page instead.
+  const isPayroll = (tx: Tx) => tx.kind === 'transfer' && !tx.other_account_name
   // Moves that never pass through checking, such as savings straight into a Roth IRA.
   const { accounts: allAccounts } = useData()
   const isChecking = (name: string | null) => allAccounts.some((a) => a.name === name && a.type === 'checking')
@@ -142,7 +95,8 @@ export function Month({ month }: { month: string }) {
         <h1>{monthLabel(month)}</h1>
         <a className="button" href={`#/month/${shiftMonth(month, 1)}`} aria-label="Next month">›</a>
         {month !== currentMonth() && <a className="button" href={`#/month/${currentMonth()}`}>This month</a>}
-        <a className="button push" href={`#/import/${month}`}>Paste rows into {monthLabel(month, 'short')}</a>
+        <a className="button push" href={`#/reconcile/${month}`}>Reconcile with bank</a>
+        <a className="button" href={`#/import/${month}`}>Paste rows into {monthLabel(month, 'short')}</a>
       </div>
       <nav className="months" aria-label="Jump to month">
         <select value={year} aria-label="Year" onChange={(e) => { window.location.hash = `#/month/${e.target.value}-${month.slice(5)}` }}>
@@ -170,7 +124,7 @@ export function Month({ month }: { month: string }) {
           {s.one_off_cents !== 0 && <div className="tile"><span>One-off spending</span><strong>{money(s.one_off_cents)}</strong><em>not in spending</em></div>}
           <div className="tile"><span>Savings</span><strong>{money(s.moved.savings)}</strong><em>{percent(s.moved.savings, s.income_cents)} of income</em></div>
           <div className="tile"><span>Investments</span><strong>{money(s.moved.investment)}</strong><em>{percent(s.moved.investment, s.income_cents)} of income</em></div>
-          <div className="tile"><span>Retirement</span><strong>{money(s.moved.retirement)}</strong></div>
+          <div className="tile"><span>Retirement</span><strong>{money(s.moved.retirement)}</strong><em><a href="#/savings">Details on Savings</a></em></div>
         </div>
       )}
       <EntryForm month={month} defaultDate={defaultDate} onSaved={refresh} reimburse={reimburse} onReimburseHandled={handled} />
@@ -183,13 +137,6 @@ export function Month({ month }: { month: string }) {
           <div className="columns">
             {s?.accounts.map((a) => <AccountColumn key={a.id} account={a} month={month} version={version} onChanged={refresh} onReimburse={setReimburse} />)}
           </div>
-          {payroll.length > 0 && (
-            <section className="card">
-              <div className="row"><h2>From paycheck <span className="muted">({payroll.length})</span></h2><span className="num">{money(payroll.reduce((n, tx) => n + tx.amount_cents, 0))}</span></div>
-              <p className="muted small">401k and other deductions. These never touch a checking balance.</p>
-              <TxTable rows={payroll} onChanged={refresh} />
-            </section>
-          )}
           {between.length > 0 && (
             <section className="card">
               <div className="row"><h2>Between savings and investment accounts <span className="muted">({between.length})</span></h2></div>
@@ -208,7 +155,7 @@ export function Month({ month }: { month: string }) {
       {view === 'combined' && <div className="split">
         <section className="card">
           <h2>Entries</h2>
-          <TxTable rows={list.data?.rows ?? []} onChanged={refresh} onReimburse={setReimburse} />
+          <TxTable rows={(list.data?.rows ?? []).filter((tx) => !isPayroll(tx))} onChanged={refresh} onReimburse={setReimburse} />
         </section>
         <aside>
           <section className="card">
@@ -216,13 +163,6 @@ export function Month({ month }: { month: string }) {
             {s && s.categories.length > 0
               ? <BarList rows={s.categories.map((c) => ({ label: c.name, cents: c.cents, color: c.color }))} />
               : <p className="muted empty">No spending this month.</p>}
-          </section>
-          <section className="card">
-            <h2>Balances</h2>
-            <p className="muted small">Type what the bank shows to check it against your entries.</p>
-            <ul className="accounts">
-              {s?.accounts.map((a) => <Reconcile key={a.id} account={a} month={month} onSaved={refresh} />)}
-            </ul>
           </section>
         </aside>
       </div>}

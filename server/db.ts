@@ -56,6 +56,43 @@ CREATE TABLE IF NOT EXISTS goals (
   target_date TEXT NOT NULL,
   account_ids TEXT NOT NULL DEFAULT '[]'
 );
+-- Bank and card exports, kept so a month can be reconciled line by line and resumed later.
+CREATE TABLE IF NOT EXISTS cards (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  issuer TEXT NOT NULL CHECK (issuer IN ('chase','capitalone')),
+  last4 TEXT NOT NULL DEFAULT ''
+);
+-- amount_cents is signed as spending: a charge is positive, a refund or payment negative.
+-- paid_by is the checking line whose card payment covered this charge or refund.
+CREATE TABLE IF NOT EXISTS card_lines (
+  id INTEGER PRIMARY KEY,
+  card_id INTEGER NOT NULL REFERENCES cards(id),
+  date TEXT NOT NULL,
+  description TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('charge','refund','payment')),
+  fingerprint TEXT NOT NULL,
+  paid_by INTEGER REFERENCES bank_lines(id) ON DELETE SET NULL,
+  UNIQUE (card_id, fingerprint)
+);
+-- amount_cents is signed from the account: money in is positive. card_payment_id is the payment
+-- row in a card export that this checking line was matched to.
+CREATE TABLE IF NOT EXISTS bank_lines (
+  id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES accounts(id),
+  date TEXT NOT NULL,
+  description TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  type TEXT NOT NULL DEFAULT '',
+  balance_cents INTEGER,
+  fingerprint TEXT NOT NULL,
+  card_payment_id INTEGER REFERENCES card_lines(id) ON DELETE SET NULL,
+  ignored INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (account_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS bank_lines_month ON bank_lines(account_id, date);
+CREATE INDEX IF NOT EXISTS card_lines_queue ON card_lines(card_id, paid_by, date);
 CREATE TABLE IF NOT EXISTS merchant_rules (
   id INTEGER PRIMARY KEY,
   pattern TEXT NOT NULL,
@@ -99,6 +136,17 @@ export function openDb(file: string): DB {
     const used = (db.prepare('SELECT COUNT(*) n FROM categories WHERE color IS NOT NULL').get() as { n: number }).n
     paint.run(TAG_COLORS[used % TAG_COLORS.length], cat.id)
   }
+  // Entries created from, or matched to, a bank line point back at it. from_bank marks the ones
+  // reconciliation created, so undoing a line deletes those and only unlinks entries typed by hand.
+  for (const [column, ddl] of [
+    ['bank_line_id', 'INTEGER REFERENCES bank_lines(id) ON DELETE SET NULL'],
+    ['card_line_id', 'INTEGER REFERENCES card_lines(id) ON DELETE SET NULL'],
+    ['from_bank', 'INTEGER NOT NULL DEFAULT 0'],
+  ]) {
+    const existing = (db.prepare(`PRAGMA table_info(transactions)`).all() as { name: string }[]).map((c) => c.name)
+    if (!existing.includes(column)) db.exec(`ALTER TABLE transactions ADD COLUMN ${column} ${ddl}`)
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS tx_bank_line ON transactions(bank_line_id)')
   // Every entry counts in a month of its own, separate from its date: a card purchase dated in
   // December that was paid from checking in January belongs to January.
   const txColumns = (db.prepare(`PRAGMA table_info(transactions)`).all() as { name: string }[]).map((c) => c.name)
