@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { guessRoles, parseRows, splitRows, type Role } from '../../shared/parse.ts'
+import { guessRoles, parseAmount, parseRows, splitRows, type Role } from '../../shared/parse.ts'
 import { api } from '../api.ts'
 import { useData } from '../App.tsx'
 import { currentMonth, dateLabel, money, monthLabel } from '../format.ts'
@@ -15,14 +15,22 @@ const MODES: [Mode, string, string][] = [
   ['income', 'Income', 'Source, amount, date'],
   ['reimbursement', 'Reimbursements', 'Description, amount, date, category'],
   ['transfer', 'Transfers: internal, savings, investments, 401k', 'Date and amount, for one pair of accounts at a time'],
-  ['balances', 'Account balances', 'A date column and one column per account, with the header row'],
+  ['balances', 'Net worth balances', 'A date column and one column per account, with the header row (like the Savings Record table)'],
 ]
 
-export function Import({ month: fromLink }: { month?: string }) {
+// Spreadsheet headers that do not contain the account's name.
+const HEADER_ALIASES: [(header: string) => boolean, (a: { name: string; type: string }) => boolean][] = [
+  [(h) => h === 'individual' || h === 'brokerage', (a) => a.type === 'investment'],
+  [(h) => h === 'roth', (a) => a.name.toLowerCase() === 'roth ira'],
+  // Marcus and Bread were tracked as one figure, now kept under Bread.
+  [(h) => h.includes('bread'), (a) => a.name.toLowerCase() === 'bread'],
+]
+
+export function Import({ month: fromLink, balances }: { month?: string; balances?: boolean }) {
   const { accounts, categories, reload } = useData()
   const spendable = accounts.filter((a) => !a.archived && a.type === 'checking')
   const netWorth = accounts.filter((a) => a.in_net_worth)
-  const [mode, setMode] = useState<Mode>('purchase')
+  const [mode, setMode] = useState<Mode>(balances ? 'balances' : 'purchase')
   // Month (YYYY-MM) every pasted row is filed under, whatever its date. Rows with no date are dated the 1st.
   const [fileMonth, setFileMonth] = useState(() => fromLink ?? stored('last-month') ?? currentMonth())
   const [byDate, setByDate] = useState(false)
@@ -49,7 +57,9 @@ export function Import({ month: fromLink }: { month?: string }) {
       guessed = guessed.map((role, i) => {
         if (role === 'date') return role
         const name = (header[i] ?? '').trim().toLowerCase()
+        const alias = HEADER_ALIASES.find(([test]) => test(name))?.[1]
         const hit = name && (netWorth.find((a) => a.name.toLowerCase() === name)
+          ?? (alias && netWorth.find(alias))
           ?? netWorth.find((a) => a.name.toLowerCase().includes(name) || name.includes(a.name.toLowerCase())))
         return hit ? (`account:${hit.id}` as Role) : 'ignore'
       })
@@ -65,6 +75,13 @@ export function Import({ month: fromLink }: { month?: string }) {
     return { ...r, date: fallbackDate, errors: r.errors.filter((e) => e !== 'missing date') }
   })
   const good = parsed.filter((r) => r.errors.length === 0)
+  // Balance columns with numbers in them that are not going anywhere (an unmatched header, or a total).
+  const ignoredAmounts = mode !== 'balances' ? [] : roles.flatMap((role, i) => {
+    if (role !== 'ignore') return []
+    const header = (rows[0]?.[i] ?? '').trim()
+    const hasAmounts = rows.slice(1).some((r) => parseAmount(r[i] ?? '') !== null)
+    return hasAmounts && !/total/i.test(header) ? [header || `Column ${i + 1}`] : []
+  })
   const bad = parsed.filter((r) => r.errors.length > 0)
   const warned = good.filter((r) => r.warnings.length > 0)
 
@@ -192,6 +209,11 @@ export function Import({ month: fromLink }: { month?: string }) {
             {skipped > 0 && ` · ${skipped} blank or header rows ignored`}
             {removed.size > 0 && <> · {removed.size} removed <button type="button" className="inline" onClick={() => setRemoved(new Set())}>Undo</button></>}
           </p>
+          {ignoredAmounts.length > 0 && (
+            <p className="error small" role="alert">
+              ⚠ {ignoredAmounts.map((h) => `“${h}”`).join(', ')} {ignoredAmounts.length === 1 ? 'has' : 'have'} amounts but {ignoredAmounts.length === 1 ? 'is' : 'are'} set to Ignore, so {ignoredAmounts.length === 1 ? 'it' : 'they'} won't be imported. Choose an account above the column{ignoredAmounts.length === 1 ? '' : 's'}, or leave as is for totals.
+            </p>
+          )}
           <div className="table-wrap">
             <table className="grid preview">
               <thead>

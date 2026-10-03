@@ -75,7 +75,7 @@ export function App() {
         {page === 'savings' && <Savings />}
         {page === 'networth' && <NetWorthPage />}
         {page === 'companies' && <Companies />}
-        {page === 'import' && <Import month={/^\d{4}-(0[1-9]|1[0-2])$/.test(arg ?? '') ? arg : undefined} />}
+        {page === 'import' && <Import key={arg ?? ''} month={/^\d{4}-(0[1-9]|1[0-2])$/.test(arg ?? '') ? arg : undefined} balances={arg === 'balances'} />}
         {page === 'settings' && <Settings />}
       </main>
     </DataContext.Provider>
