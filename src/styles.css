@@ -134,6 +134,8 @@ ul.made li .num { margin-left: auto; }
 .closing { margin-top: 6px; flex-wrap: nowrap; }
 .closing input { flex: 1; min-width: 0; }
 .merge { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; max-width: 360px; white-space: normal; text-align: right; }
+td.total-col, th.total-col { background: var(--peach); }
+table.grid tbody tr:nth-child(even) td.total-col { background: #ffdccd; }
 .tile.warn { background: #ffe1dc; }
 .tabs.view { margin-bottom: 12px; }
 .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }

@@ -33,7 +33,7 @@ This builds the app, starts it at http://127.0.0.1:4321 and opens it in your bro
 
 1. Settings: set each checking account's starting balance (the January carryover).
 2. Import: for each month tab, copy the Spending table and paste it as Purchases, choosing the checking account of that tab and setting "Count in month" to the tab's month. Do the same for the Income and Reimbursement blocks. Pasting the same block twice adds nothing.
-3. Import → Account balances: paste the Savings Record table from the Goals tab, including its header row.
+3. Net worth → Paste balances: paste the Savings Record table from the spreadsheet's Goals tab, including its header row.
 4. Import → Savings, investments and 401k: for each account on the Savings tab, paste its Date and Amount columns and choose where the money came from (a checking account, or "Paycheck" for 401k and other payroll deductions).
 5. Month: add Zelle moves between the two checking accounts by hand as transfers.
 
