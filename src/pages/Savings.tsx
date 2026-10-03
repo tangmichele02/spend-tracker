@@ -38,7 +38,8 @@ export function Savings() {
       <div className="tiles">
         {GROUPS.map(([type, label]) => {
           const total = sum(groupMonths(type))
-          return <div className="tile" key={type}><span>{label} this year</span><strong>{money(total)}</strong><em>{percent(sum(takeHome(type)), income)} of take-home income</em></div>
+          // Retirement mostly comes from before the paycheck or from earlier savings, so a share of income would mislead.
+          return <div className="tile" key={type}><span>{label} this year</span><strong>{money(total)}</strong>{type !== 'retirement' && <em>{percent(sum(takeHome(type)), income)} of take-home income</em>}</div>
         })}
         <div className="tile"><span>Total put away</span><strong>{money(sum(all))}</strong><em>{percent(sum(takeHome()), income)} of take-home income</em></div>
       </div>
