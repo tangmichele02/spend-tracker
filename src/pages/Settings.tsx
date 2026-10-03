@@ -10,7 +10,10 @@ const TYPES: [AccountType, string][] = [
   ['checking', 'Checking'], ['savings', 'Savings'], ['investment', 'Investment'], ['retirement', 'Retirement'],
 ]
 
-function AccountRow({ account, onChanged }: { account: Account; onChanged: () => void }) {
+function AccountRow({ account, others, onChanged }: { account: Account; others: Account[]; onChanged: () => void }) {
+  const [merging, setMerging] = useState(false)
+  const [into, setInto] = useState('')
+  const sameType = others.filter((o) => o.type === account.type && o.id !== account.id)
   const [name, setName] = useState(account.name)
   const [opening, setOpening] = useState((account.opening_cents / 100).toFixed(2))
   const [error, setError] = useState('')
@@ -48,6 +51,18 @@ function AccountRow({ account, onChanged }: { account: Account; onChanged: () =>
       </td>
       <td className="center"><input type="checkbox" aria-label="Count in net worth" checked={!!account.in_net_worth} onChange={(e) => void patch({ in_net_worth: e.target.checked ? 1 : 0 })} /></td>
       <td className="actions">
+        {merging ? (
+          <span className="merge">
+            <select value={into} aria-label={`Merge ${account.name} into`} onChange={(e) => setInto(e.target.value)}>
+              <option value="">Merge into…</option>
+              {sameType.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+            <button type="button" className="danger" disabled={!into} onClick={() => void api('POST', `/api/accounts/${account.id}/merge`, { into: +into })
+              .then(() => { setMerging(false); onChanged() }).catch((e: Error) => setError(e.message))}>Merge</button>
+            <button type="button" onClick={() => setMerging(false)}>Cancel</button>
+            <span className="muted small">Moves all of {account.name}'s entries and balances there, then removes {account.name}. Where both have a balance on the same date, the other account's is kept.</span>
+          </span>
+        ) : sameType.length > 0 && <button type="button" onClick={() => setMerging(true)}>Merge…</button>}
         <button type="button" onClick={() => void patch({ archived: account.archived ? 0 : 1 })}>{account.archived ? 'Restore' : 'Archive'}</button>
       </td>
     </tr>
@@ -137,7 +152,7 @@ export function Settings() {
         <div className="table-wrap">
           <table className="grid">
             <thead><tr><th>Name</th><th>Type</th><th>Starting balance</th><th>In net worth</th><th /></tr></thead>
-            <tbody>{accounts.map((a) => <AccountRow key={a.id} account={a} onChanged={() => void reload()} />)}</tbody>
+            <tbody>{accounts.map((a) => <AccountRow key={a.id} account={a} others={accounts} onChanged={() => void reload()} />)}</tbody>
           </table>
         </div>
         <form className="fields" onSubmit={(e) => { e.preventDefault(); void add('/api/accounts', account, () => setAccount({ name: '', type: 'savings' })) }}>

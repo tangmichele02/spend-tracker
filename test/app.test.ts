@@ -359,3 +359,25 @@ test('an older database with a Roth 401k account has it folded into 401k', async
   reopened.close()
   for (const suffix of ['', '-wal', '-shm']) (await import('node:fs')).rmSync(file + suffix, { force: true })
 })
+
+test('merging an account moves its entries and balances, keeping the destination where both have one', async () => {
+  const { call } = setup()
+  const { account } = await ids(call)
+  await call('POST', '/api/transfers', { date: '2026-03-01', from_account_id: account('Chase'), to_account_id: account('Marcus'), amount_cents: 10000, description: '' })
+  await call('POST', '/api/transfers', { date: '2026-03-05', from_account_id: account('Marcus'), to_account_id: account('Bread'), amount_cents: 4000, description: '' })
+  await call('POST', '/api/snapshots', { rows: [
+    { account_id: account('Marcus'), date: '2026-03-31', balance_cents: 500000 },
+    { account_id: account('Bread'), date: '2026-03-31', balance_cents: 500000 },
+    { account_id: account('Marcus'), date: '2026-02-28', balance_cents: 480000 },
+  ] })
+  await call('POST', `/api/accounts/${account('Marcus')}/merge`, { into: account('Bread') })
+  const boot = await call<Bootstrap>('GET', '/api/bootstrap')
+  assert.ok(!boot.accounts.some((a) => a.name === 'Marcus'))
+  const bread = boot.accounts.find((a) => a.name === 'Bread')!.id
+  const nw = await call<NetWorth>('GET', '/api/networth')
+  assert.deepEqual(nw.snapshots.filter((s) => s.account_id === bread).map((s) => [s.date, s.balance_cents]), [['2026-02-28', 480000], ['2026-03-31', 500000]])
+  // The Chase move now lands in Bread; the Marcus-to-Bread move is gone.
+  const year = await call<YearSummary>('GET', '/api/year/2026')
+  assert.equal(year.contributions.find((a) => a.name === 'Bread')!.cents[2], 10000)
+  await assert.rejects(call('POST', `/api/accounts/${bread}/merge`, { into: account('Fidelity') }), /same type/)
+})

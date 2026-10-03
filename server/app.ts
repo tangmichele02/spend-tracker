@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Backups } from './backup.ts'
 import { BadRequest, check } from './errors.ts'
 import { registerReconcile } from './reconcile.ts'
-import { NO_CATEGORY_COLOR, TAG_COLORS, type DB } from './db.ts'
+import { mergeAccounts, NO_CATEGORY_COLOR, TAG_COLORS, type DB } from './db.ts'
 import type {
   Account, Bootstrap, Category, Goal, MerchantGroup, MerchantRule, MonthSummary, NetWorth,
   Snapshot, TransferInput, Tx, TxInput, YearSummary,
@@ -536,6 +536,14 @@ export function createApp(db: DB, backups?: Backups) {
     check(a.name?.trim() && TYPES.includes(a.type) && Number.isInteger(a.opening_cents), 'Invalid account')
     db.prepare('UPDATE accounts SET name = ?, type = ?, opening_cents = ?, in_net_worth = ?, archived = ? WHERE id = ?')
       .run(a.name.trim(), a.type, a.opening_cents, a.in_net_worth ? 1 : 0, a.archived ? 1 : 0, existing.id)
+    return c.json({ ok: true })
+  })
+  app.post('/api/accounts/:id/merge', async (c) => {
+    const from = accountById(+c.req.param('id'))
+    const into = accountById(((await c.req.json()) as { into?: number }).into)
+    check(from && into && from.id !== into.id, 'Choose a different account to merge into')
+    check(from.type === into.type, 'Only accounts of the same type can be merged')
+    mergeAccounts(db, from.id, into.id, 'keep')
     return c.json({ ok: true })
   })
   app.delete('/api/accounts/:id', (c) => {

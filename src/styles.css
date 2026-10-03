@@ -133,6 +133,7 @@ ul.made li { display: flex; gap: 8px; align-items: center; font-size: 13px; padd
 ul.made li .num { margin-left: auto; }
 .closing { margin-top: 6px; flex-wrap: nowrap; }
 .closing input { flex: 1; min-width: 0; }
+.merge { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; max-width: 360px; white-space: normal; text-align: right; }
 .tile.warn { background: #ffe1dc; }
 .tabs.view { margin-bottom: 12px; }
 .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }

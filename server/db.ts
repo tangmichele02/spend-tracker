@@ -156,22 +156,7 @@ export function openDb(file: string): DB {
   // Roth and regular 401k are no longer told apart: fold anything recorded under "Roth 401k" into "401k".
   const roth = db.prepare(`SELECT id FROM accounts WHERE name = 'Roth 401k'`).get() as { id: number } | undefined
   const plain = db.prepare(`SELECT id FROM accounts WHERE name = '401k'`).get() as { id: number } | undefined
-  if (roth && plain) {
-    db.transaction(() => {
-      db.prepare('UPDATE transactions SET account_id = ? WHERE account_id = ?').run(plain.id, roth.id)
-      // Balances recorded for both on one date add up.
-      db.prepare(`INSERT INTO snapshots (account_id, date, balance_cents) SELECT ?, date, balance_cents FROM snapshots WHERE account_id = ?
-        ON CONFLICT (account_id, date) DO UPDATE SET balance_cents = balance_cents + excluded.balance_cents`).run(plain.id, roth.id)
-      db.prepare('DELETE FROM snapshots WHERE account_id = ?').run(roth.id)
-      for (const goal of db.prepare('SELECT id, account_ids FROM goals').all() as { id: number; account_ids: string }[]) {
-        const ids = JSON.parse(goal.account_ids) as number[]
-        if (!ids.includes(roth.id)) continue
-        const merged = [...new Set(ids.map((id) => (id === roth.id ? plain.id : id)))]
-        db.prepare('UPDATE goals SET account_ids = ? WHERE id = ?').run(JSON.stringify(merged), goal.id)
-      }
-      db.prepare('DELETE FROM accounts WHERE id = ?').run(roth.id)
-    })()
-  }
+  if (roth && plain) mergeAccounts(db, roth.id, plain.id, 'add')
   // Credit cards were once accounts of their own. Purchases are now recorded against the checking
   // account that paid, so drop card accounts nothing refers to and hide any that were used.
   db.exec(`
@@ -180,4 +165,30 @@ export function openDb(file: string): DB {
     UPDATE accounts SET archived = 1 WHERE type = 'card';
   `)
   return db
+}
+
+/**
+ * Moves everything recorded under one account to another and deletes the first. Transfers between
+ * the two become moves within one account, so they are dropped. Where both have a balance on the
+ * same date, `onConflict` decides: 'add' when they were separate holdings, 'keep' (the destination's)
+ * when the source only repeated the same figure.
+ */
+export function mergeAccounts(db: DB, fromId: number, intoId: number, onConflict: 'add' | 'keep'): void {
+  db.transaction(() => {
+    db.prepare(`DELETE FROM transactions WHERE transfer_id IN (
+      SELECT transfer_id FROM transactions WHERE transfer_id IS NOT NULL AND account_id IN (?, ?)
+      GROUP BY transfer_id HAVING COUNT(DISTINCT account_id) = 2 AND COUNT(*) = 2)`).run(fromId, intoId)
+    db.prepare('UPDATE transactions SET account_id = ? WHERE account_id = ?').run(intoId, fromId)
+    db.prepare('UPDATE bank_lines SET account_id = ? WHERE account_id = ?').run(intoId, fromId)
+    db.prepare(`INSERT INTO snapshots (account_id, date, balance_cents) SELECT ?, date, balance_cents FROM snapshots WHERE account_id = ?
+      ON CONFLICT (account_id, date) DO UPDATE SET balance_cents = ${onConflict === 'add' ? 'balance_cents + excluded.balance_cents' : 'balance_cents'}`).run(intoId, fromId)
+    db.prepare('DELETE FROM snapshots WHERE account_id = ?').run(fromId)
+    for (const goal of db.prepare('SELECT id, account_ids FROM goals').all() as { id: number; account_ids: string }[]) {
+      const ids = JSON.parse(goal.account_ids) as number[]
+      if (!ids.includes(fromId)) continue
+      const merged = [...new Set(ids.map((id) => (id === fromId ? intoId : id)))]
+      db.prepare('UPDATE goals SET account_ids = ? WHERE id = ?').run(JSON.stringify(merged), goal.id)
+    }
+    db.prepare('DELETE FROM accounts WHERE id = ?').run(fromId)
+  })()
 }
